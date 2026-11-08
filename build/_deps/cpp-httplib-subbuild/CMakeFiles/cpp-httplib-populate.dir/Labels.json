@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/CMakeFiles/cpp-httplib-populate"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/CMakeFiles/cpp-httplib-populate.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/CMakeFiles/cpp-httplib-populate-complete.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-build.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-configure.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-download.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-install.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-patch.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-test.rule"
+		},
+		{
+			"file" : "/home/vikabro/back/project2/build/_deps/cpp-httplib-subbuild/cpp-httplib-populate-prefix/src/cpp-httplib-populate-stamp/cpp-httplib-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"cpp-httplib-populate"
+		],
+		"name" : "cpp-httplib-populate"
+	}
+}

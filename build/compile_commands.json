@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/vikabro/back/project2/build",
+  "command": "/usr/bin/g++ -DCPPHTTPLIB_OPENSSL_SUPPORT -I/home/vikabro/back/project2/build/_deps/nlohmann_json-src/include -isystem /home/vikabro/back/project2/build/_deps/cpp-httplib-src -g -std=gnu++17 -o CMakeFiles/MoneyTracker.dir/money_tracker.cpp.o -c /home/vikabro/back/project2/money_tracker.cpp",
+  "file": "/home/vikabro/back/project2/money_tracker.cpp",
+  "output": "CMakeFiles/MoneyTracker.dir/money_tracker.cpp.o"
+}
+]
