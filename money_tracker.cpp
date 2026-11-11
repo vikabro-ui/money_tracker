@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <algorithm>
 #include <pqxx/pqxx>
 #include <httplib.h> 
 #include <nlohmann/json.hpp>
@@ -112,39 +113,38 @@ public:
     }
 
     void handleBankWebhook(const httplib::Request& req, httplib::Response& res) 
-{ 
-    try {
-        std::cout << "\n[СИГНАЛ] Получен вебхук от банка!\n";
+    { 
+        try {
+            std::cout << "\n[СИГНАЛ] Получен вебхук от банка!\n";
 
-        json bank_data = json::parse(req.body);
-        int account_id = bank_data["account_id"];
-        int category_id = bank_data["category_id"];
-        double amount = bank_data["amount"];
-        std::string description = bank_data["description"];
+            json bank_data = json::parse(req.body);
+            int account_id = bank_data["account_id"];
+            int category_id = bank_data["category_id"];
+            double amount = bank_data["amount"];
+            std::string description = bank_data["description"];
 
-        bool success = addTransaction(account_id, category_id, amount, description);
-        
-        if (success) {
-           
-            const int SALARY_CATEGORY_ID = 6; 
+            bool success = addTransaction(account_id, category_id, amount, description);
+            
+            if (success) {
+                const int SALARY_CATEGORY_ID = 6; 
 
-            if (amount > 0 && category_id == SALARY_CATEGORY_ID) {
-                std::cout << "[ЗАЧИСЛЕНИЕ СРЕДСТВ] Зафиксировано поступление зарплаты (" << amount << " BYN). Пересчитываем лимиты...\n";
-                distributeIncomeAndSetBudgets(amount);
+                if (amount > 0 && category_id == SALARY_CATEGORY_ID) {
+                    std::cout << "[ЗАЧИСЛЕНИЕ СРЕДСТВ] Зафиксировано поступление зарплаты (" << amount << " BYN). Пересчитываем лимиты...\n";
+                    distributeIncomeAndSetBudgets(amount);
+                }
+
+                res.set_content("{\"status\": \"ok\", \"message\": \"Transaction processed\"}", "application/json");
+            } else {
+                res.status = 500;
+                res.set_content("{\"status\": \"error\", \"message\": \"Database error\"}", "application/json");
             }
 
-            res.set_content("{\"status\": \"ok\", \"message\": \"Transaction processed\"}", "application/json");
-        } else {
-            res.status = 500;
-            res.set_content("{\"status\": \"error\", \"message\": \"Database error\"}", "application/json");
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА ПАРСИНГА JSON] " << e.what() << "\n";
+            res.status = 400;
+            res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
         }
-
-    } catch (const std::exception& e) {
-        std::cerr << "[ОШИБКА ПАРСИНГА JSON] " << e.what() << "\n";
-        res.status = 400;
-        res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
     }
-}
 
     std::string getBalancesJson() 
     {
@@ -172,6 +172,35 @@ public:
             return response.dump(); 
         } catch (const std::exception& e) {
             std::cerr << "[ОШИБКА БД] Не удалось получить балансы: " << e.what() << "\n";
+            return "{\"status\": \"error\", \"message\": \"Database error\"}";
+        }
+    }
+
+    std::string getCategoriesJson() 
+    {
+        try {
+            pqxx::connection C(connection_string_);
+            pqxx::work W(C);
+
+            pqxx::result res = W.exec("SELECT id, name, type, target_percentage FROM categories;");
+
+            json categories_array = json::array();
+            for (auto row : res) {
+                json cat;
+                cat["id"] = row["id"].as<int>();
+                cat["name"] = row["name"].as<std::string>();
+                cat["type"] = row["type"].as<std::string>();
+                cat["target_percentage"] = row["target_percentage"].as<double>();
+                categories_array.push_back(cat);
+            }
+
+            json response;
+            response["status"] = "ok";
+            response["categories"] = categories_array;
+
+            return response.dump(); 
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА БД] Не удалось получить категории: " << e.what() << "\n";
             return "{\"status\": \"error\", \"message\": \"Database error\"}";
         }
     }
@@ -204,7 +233,7 @@ public:
             std::cout << "\n[ПЕРЕРАСПРЕДЕЛЕНИЕ] Общая сумма доходов: " << total_income << " BYN\n";
             std::cout << "[ИНФО] Сумма процентов в базе: " << total_percentage << "%\n";
 
-           bool need_normalization = (std::abs(total_percentage - 100.0) > 0.01);
+            bool need_normalization = (std::abs(total_percentage - 100.0) > 0.01);
             if (need_normalization) {
                 std::cout << "[АВТО-ПИЛОТ] Сумма не равна 100%. Пропорционально подстраиваем под 100%...\n";
             }
@@ -216,21 +245,13 @@ public:
 
                 if (percentage <= 0) continue;
 
-                
-                double effective_percentage=need_normalization?(percentage / total_percentage) * 100.0 
-                : percentage;
-
+                double effective_percentage = need_normalization ? (percentage / total_percentage) * 100.0 : percentage;
                 double calculated_limit = total_income * (effective_percentage / 100.0);
 
-                
                 W.exec_params(
                     "UPDATE budgets SET monthly_limit = $1 WHERE category_id = $2;",
                     calculated_limit, cat_id
                 );
-
-                std::cout << "  - Категория \"" << cat_name << "\" (установлено: " << percentage 
-                          << "%, скорректировано: " << effective_percentage << "%): лимит -> " 
-                          << calculated_limit << " BYN\n";
             }
 
             W.commit();
@@ -290,7 +311,7 @@ public:
                 "INSERT INTO categories (name, type, target_percentage) VALUES ($1, $2, $3);",
                 name, type, target_percentage
             );
-             if (type == "expense") {
+            if (type == "expense") {
                 W.exec(
                     "INSERT INTO budgets (category_id, monthly_limit) "
                     "SELECT id, 0.0 FROM categories WHERE id NOT IN (SELECT category_id FROM budgets);"
@@ -328,6 +349,121 @@ public:
             res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
         }
     }
+
+    void handleAddAccount(const httplib::Request& req, httplib::Response& res) 
+    {
+        try {
+            json data = json::parse(req.body);
+            std::string name = data["name"];
+            double balance = data.contains("balance") ? data["balance"].get<double>() : 0.0;
+            std::string currency = data.contains("currency") ? data["currency"].get<std::string>() : "BYN";
+
+            bool success = addAccount(name, balance, currency);
+
+            if (success) {
+                res.set_content("{\"status\": \"ok\", \"message\": \"Account added successfully\"}", "application/json");
+            } else {
+                res.status = 500;
+                res.set_content("{\"status\": \"error\", \"message\": \"Database error\"}", "application/json");
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА ПАРСИНГА JSON] " << e.what() << "\n";
+            res.status = 400;
+            res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
+        }
+    }
+
+    bool registerUser(const std::string& username, const std::string& password) {
+        try {
+            pqxx::connection C(connection_string_);
+            pqxx::work W(C);
+
+            W.exec_params(
+                "INSERT INTO users (username, password) VALUES ($1, $2);",
+                username, password
+            );
+            W.commit();
+            std::cout << "[УСПЕХ] Пользователь \"" << username << "\" зарегистрирован!\n";
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА] Не удалось зарегистрировать пользователя: " << e.what() << "\n";
+            return false;
+        }
+    }
+
+    bool loginUser(const std::string& username, const std::string& password) {
+        try {
+            pqxx::connection C(connection_string_);
+            pqxx::work W(C);
+
+            pqxx::result res = W.exec_params(
+                "SELECT id FROM users WHERE username = $1 AND password = $2;",
+                username, password
+            );
+
+            return !res.empty(); 
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА БД] Ошибка при входе: " << e.what() << "\n";
+            return false;
+        }
+    }
+
+    std::string getFilteredTransactionsJson(const std::string& date_val, 
+                                            const std::string& amount_val, 
+                                            const std::string& category_val) 
+    {
+        try {
+            pqxx::connection C(connection_string_);
+            pqxx::work W(C);
+
+            std::string query = 
+                "SELECT t.id, a.name as account_name, c.name as category_name, t.amount, t.description, t.date "
+                "FROM transactions t "
+                "JOIN accounts a ON t.account_id = a.id "
+                "JOIN categories c ON t.category_id = c.id WHERE 1=1";
+
+            if (!date_val.empty()) {
+                query += " AND t.date::text LIKE '" + W.esc(date_val) + "%'";
+            }
+
+            if (!amount_val.empty()) {
+                query += " AND t.amount = " + W.esc(amount_val);
+            }
+
+            if (!category_val.empty()) {
+                if (std::all_of(category_val.begin(), category_val.end(), ::isdigit)) {
+                    query += " AND t.category_id = " + W.esc(category_val);
+                } else {
+                    query += " AND c.name ILIKE '%" + W.esc(category_val) + "%'";
+                }
+            }
+
+            query += " ORDER BY t.date DESC;";
+
+            pqxx::result res = W.exec(query);
+
+            json tx_array = json::array();
+            for (auto row : res) {
+                json tx;
+                tx["id"] = row["id"].as<int>();
+                tx["account"] = row["account_name"].as<std::string>();
+                tx["category"] = row["category_name"].as<std::string>();
+                tx["amount"] = row["amount"].as<double>();
+                tx["description"] = row["description"].as<std::string>();
+                tx["date"] = row["date"].as<std::string>();
+                tx_array.push_back(tx);
+            }
+
+            json response;
+            response["status"] = "ok";
+            response["transactions"] = tx_array;
+
+            return response.dump();
+        } catch (const std::exception& e) {
+            std::cerr << "[ОШИБКА БД] Не удалось отфильтровать транзакции: " << e.what() << "\n";
+            return "{\"status\": \"error\", \"message\": \"Database error\"}";
+        }
+    }
 };
 
 int main() {
@@ -340,30 +476,88 @@ int main() {
 
     httplib::Server svr;
 
+    // 1. Вебхук от банка
     svr.Post("/bank-webhook", [&db](const httplib::Request& req, httplib::Response& res) {
         db.handleBankWebhook(req, res);
     });
 
-    svr.Get("/get-balances", [&db](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "\n[ЗАПРОС] Получен запрос на просмотр баланса счетов\n";
-        
+    // 2. Счета (Accounts)
+    svr.Get("/api/v1/accounts", [&db](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "\n[ЗАПРОС] GET /api/v1/accounts — список счетов\n";
         std::string json_response = db.getBalancesJson();
         res.set_content(json_response, "application/json");
     });
 
-    svr.Get("/get-transactions", [&db](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "\n[ЗАПРОС] Получена история транзакций\n";
-        std::string json_response = db.getTransactionsJson();
+    svr.Post("/api/v1/accounts", [&db](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "\n[ЗАПРОС] POST /api/v1/accounts — создание счета\n";
+        db.handleAddAccount(req, res);
+    });
+
+    // 3. Категории (Categories)
+    svr.Get("/api/v1/categories", [&db](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "\n[ЗАПРОС] GET /api/v1/categories — список категорий\n";
+        std::string json_response = db.getCategoriesJson();
         res.set_content(json_response, "application/json");
     });
 
-
-    svr.Post("/add-category", [&db](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "\n[ЗАПРОС] Добавление новой категории\n";
+    svr.Post("/api/v1/categories", [&db](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "\n[ЗАПРОС] POST /api/v1/categories — добавление категории\n";
         db.handleAddCategory(req, res);
     });
 
-    std::cout << "[СЕРВЕР ЗАПУЩЕН] Ожидание банковских вебхуков на http://127.0.0.1:8080/bank-webhook ...\n";
+    // 4. Транзакции с 3 независимыми фильтрами (?date=...&amount=...&category=...)
+    svr.Get("/api/v1/transactions", [&db](const httplib::Request& req, httplib::Response& res) {
+        std::string date_filter = req.has_param("date") ? req.get_param_value("date") : "";
+        std::string amount_filter = req.has_param("amount") ? req.get_param_value("amount") : "";
+        std::string category_filter = req.has_param("category") ? req.get_param_value("category") : "";
+
+        std::cout << "\n[ЗАПРОС] GET /api/v1/transactions с фильтрами:\n"
+                  << "  - Дата: " << (date_filter.empty() ? "все" : date_filter) << "\n"
+                  << "  - Сумма: " << (amount_filter.empty() ? "все" : amount_filter) << "\n"
+                  << "  - Категория: " << (category_filter.empty() ? "все" : category_filter) << "\n";
+
+        std::string json_response = db.getFilteredTransactionsJson(date_filter, amount_filter, category_filter);
+        res.set_content(json_response, "application/json");
+    });
+
+    // 5. Авторизация и Регистрация (Users / Auth)
+    svr.Post("/api/v1/auth/register", [&db](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json data = json::parse(req.body);
+            std::string username = data["username"];
+            std::string password = data["password"];
+
+            if (db.registerUser(username, password)) {
+                res.set_content("{\"status\": \"ok\", \"message\": \"User registered successfully\"}", "application/json");
+            } else {
+                res.status = 400;
+                res.set_content("{\"status\": \"error\", \"message\": \"Registration failed\"}", "application/json");
+            }
+        } catch (...) {
+            res.status = 400;
+            res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
+        }
+    });
+
+    svr.Post("/api/v1/auth/login", [&db](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json data = json::parse(req.body);
+            std::string username = data["username"];
+            std::string password = data["password"];
+
+            if (db.loginUser(username, password)) {
+                res.set_content("{\"status\": \"ok\", \"message\": \"Login successful\"}", "application/json");
+            } else {
+                res.status = 401;
+                res.set_content("{\"status\": \"error\", \"message\": \"Invalid credentials\"}", "application/json");
+            }
+        } catch (...) {
+            res.status = 400;
+            res.set_content("{\"status\": \"error\", \"message\": \"Invalid JSON\"}", "application/json");
+        }
+    });
+
+    std::cout << "[СЕРВЕР ЗАПУЩЕН] Ожидание запросов на http://127.0.0.1:8080 ...\n";
     svr.listen("0.0.0.0", 8080);
 
     return 0;
